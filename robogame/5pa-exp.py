@@ -13,40 +13,41 @@ async def main():
     motor_pair.pair(motor_pair.PAIR_1, port.A, port.B)
     motion_sensor.set_yaw_face(motion_sensor.BACK)
 
-    light_matrix.write("go go go! get to the other side ...", 100, 500)
+    timerStart()
 
     # leave home
-    await move(5)    
-    await yaw(46, Speed.Fast)
+    await motor_pair.move_for_degrees(motor_pair.PAIR_1, 1690, -5, velocity=700)
+    await yaw(-90)
     # light show
-    await move(72, Speed.Fast)
-    await yaw(0, Speed.Fast)
-    await move(15, Speed.Fast)
-
-    runloop.run(rotateFront(-260), move(19))
+    runloop.run(motor.run_for_degrees(port.C, -100, 400), move(33, Speed.Fast))
+    # time.sleep_ms(1000)
 
     # solve purple man/stage
-    await rotateFront(150)
+    await motor.run_for_degrees(port.C, -20, 1000, acceleration=5000)
+    await motor.run_for_degrees(port.C, 90, 1000, acceleration=5000)
 
     # backoff, leave
-    runloop.run(rotateFront(-180), move(-7))
+    runloop.run(motor.run_for_degrees(port.C, -100, 1000), move(-7))
 
-    # # go to concert
-    await yaw(87, Speed.Fast)
-    await move(83, Speed.Fast)
+    # # # go to concert
+    await yaw(0, Speed.Fast)
+    await move(87, Speed.Fast)
     # face concert
-    await yaw(55, Speed.Fast)
-    runloop.run(rotateFront(-260), move(20, Speed.Fast))
+    await yaw(-45)
+    runloop.run(rotateFront(-260), rotateTop(250), move(20, Speed.Fast))
     # solve top lights
-    await rotateTop(250)
+     
     # go home
     await move(-10)
-    await yaw(-10)
-    await move(-80, Speed.Fast)
+    await yaw(-100)
+    await move(-90, Speed.Fast)
+
+    timerEnd()
     
     sys.exit(0)
 
 ################### modify code abve
+
 
 
 
@@ -121,6 +122,7 @@ async def move(targetDistance, speed=Speed.Slow):
                                 lambda diff, stopOffset : diff < -stopOffset,
                                 lambda diff, adjustOffset : diff > adjustOffset,
                                 lambda diff, adjustOffset : diff < -adjustOffset,
+                                lambda yawSum : yawSum > 0,
                                 speed)
         elif targetDistance < 0:
             # _moveBackward
@@ -130,6 +132,7 @@ async def move(targetDistance, speed=Speed.Slow):
                                 lambda diff, stopOffset : diff > stopOffset,
                                 lambda diff, adjustOffset : diff < -adjustOffset,
                                 lambda diff, adjustOffset : diff > adjustOffset,
+                                lambda yawSum : yawSum < 0,
                                 speed)
     except Exception as e:
         sys.print_exception(e)
@@ -137,7 +140,7 @@ async def move(targetDistance, speed=Speed.Slow):
         pass
 
 
-async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft, funcYawRight, speed=Speed.Slow):
+async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft, funcYawRight, funcYawSum, speed=Speed.Slow):
     degreeWheel = int(targetDistance / Const_Wheel_C * 360 * Const_Distant_Adj)
     wheelAcceleration = speed * Const_Acceleration
 
@@ -145,7 +148,7 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
 
     if(speed == Speed.Slow):
         velocityNormalStart = 500
-        velocityNormalAdj = 450
+        velocityNormalAdj = 50
         wheelAcceleration = Const_Acceleration
         wheelSlowOffset = 100
         wheelStopOffset = 50
@@ -153,10 +156,10 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
 
     elif(speed == Speed.Fast):
         velocityNormalStart = 1000
-        velocityNormalAdj = 900
+        velocityNormalAdj = 50
         wheelAcceleration = Const_Acceleration * 2
         wheelSlowOffset = 150
-        wheelStopOffset = 27
+        wheelStopOffset = 50
         wheelAdjustOffset = 0.3
 
 
@@ -194,9 +197,12 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
 
     retry = 0
     maxRetry = 30
+    yawSum = 0
     while funcNormal(degreeDiff - degreeWheel, wheelSlowOffset) and retry < maxRetry:
         yawEnd = getYaw()
         yawDiff = round(yawEnd - yawStart, 3)
+        yawSum += yawDiff
+        # print(yawSum, " ", yawDiff)
         degreeEnd = motor.relative_position(port.B)
         degreeDiffLast = degreeDiff
         degreeDiff = round(degreeEnd - degreeStart, 3)
@@ -205,7 +211,11 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
         else:
             retry = 0
 
-        if funcYawLeft(yawDiff, wheelAdjustOffset):
+        velocityAdj = abs(int(velocityNormalAdj*yawDiff))
+        if(velocityAdj>200):
+            velocityAdj = 200
+
+        if funcYawLeft(yawDiff, wheelAdjustOffset) or funcYawSum(yawSum):
             log(
                 "[move",label,"c <-] yawStart=",yawStart," yawEnd=",yawEnd," yawDiff=",yawDiff, " degreeWheel=",degreeWheel, " degreeWheel", degreeWheel," degreeEnd=",degreeEnd," degreeDiff=",degreeDiff," retry=",retry,
                 logLevel = LogLevel.Detailed,
@@ -213,13 +223,13 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
             motor_pair.move_tank_for_degrees(
                 motor_pair.PAIR_1,
                 degreeWheel,
-                velocityNormalAdj,
-                velocityNormalStart,
+                velocityNormalStart-velocityAdj,
+                velocityNormalStart+velocityAdj,
                 acceleration=wheelAcceleration,
                 deceleration=wheelAcceleration,
                 stop = motor.COAST
             )
-        elif funcYawRight(yawDiff, wheelAdjustOffset):
+        elif funcYawRight(yawDiff, wheelAdjustOffset) or not funcYawSum(yawSum):
             log(
                 "[move",label,"c ->] yawStart=",yawStart," yawEnd=",yawEnd," yawDiff=",yawDiff, " degreeWheel=",degreeWheel, " degreeEnd=",degreeEnd," degreeDiff=",degreeDiff," retry=",retry,
                 logLevel = LogLevel.Detailed,
@@ -227,8 +237,8 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
             motor_pair.move_tank_for_degrees(
                 motor_pair.PAIR_1,
                 degreeWheel,
-                velocityNormalStart,
-                velocityNormalAdj,
+                velocityNormalStart+velocityAdj,
+                velocityNormalStart-velocityAdj,
                 acceleration=wheelAcceleration,
                 deceleration=wheelAcceleration,
                 stop = motor.COAST
@@ -247,7 +257,8 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
                 deceleration=wheelAcceleration,
                 stop = motor.COAST
             )
-        time.sleep_ms(10)
+
+        time.sleep_ms(5)
 
     # slow down
     motor_pair.move_tank_for_degrees(
@@ -264,10 +275,12 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
     )
 
     retry = 0
+    yawSum = 0
     # must use motor.BRAKE in slow down otherwise it drifts
     while funcSlow(degreeDiff - degreeWheel, wheelStopOffset) and retry < maxRetry:
         yawEnd = getYaw()
         yawDiff = round(yawEnd - yawStart, 3)
+        yawSum += yawDiff
         degreeEnd = motor.relative_position(port.B)
         degreeDiffLast = degreeDiff
         degreeDiff = round(degreeEnd - degreeStart, 3)
@@ -275,7 +288,12 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
             retry = retry + 1
         else:
             retry = 0
-        if funcYawLeft(yawDiff, wheelAdjustOffset):
+
+        velocityAdj = abs(int(velocityNormalAdj/5*yawDiff))
+        if(velocityAdj > 50):
+            velocityAdj = 50
+
+        if funcYawLeft(yawDiff, wheelAdjustOffset) or funcYawSum(yawSum):
             log(
                 "[move",label,"e <--] yawStart=",yawStart," yawEnd=",yawEnd," yawDiff=",yawDiff, " degreeWheel=",degreeWheel, " degreeEnd=",degreeEnd," degreeDiff=",degreeDiff," retry=",retry,
                 logLevel = LogLevel.Detailed,
@@ -283,13 +301,13 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
             motor_pair.move_tank_for_degrees(
                 motor_pair.PAIR_1,
                 degreeWheel,
-                70,
-                80,
-                acceleration=wheelAcceleration,
-                deceleration=wheelAcceleration,
+                80-velocityAdj,
+                80+velocityAdj,
+                acceleration=400,
+                deceleration=400,
                 stop = motor.BRAKE
             )
-        elif funcYawRight(yawDiff, wheelAdjustOffset):
+        elif funcYawRight(yawDiff, wheelAdjustOffset) or not funcYawSum(yawSum):
             log(
                 "[move",label,"e -->] yawStart=",yawStart," yawEnd=",yawEnd," yawDiff=",yawDiff, " degreeWheel=",degreeWheel, " degreeEnd=",degreeEnd," degreeDiff=",degreeDiff," retry=",retry,
                 logLevel = LogLevel.Detailed,
@@ -297,10 +315,10 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
             motor_pair.move_tank_for_degrees(
                 motor_pair.PAIR_1,
                 degreeWheel,
-                80,
-                70,
-                acceleration=wheelAcceleration,
-                deceleration=wheelAcceleration,
+                80+velocityAdj,
+                80-velocityAdj,
+                acceleration=400,
+                deceleration=400,
                 stop = motor.BRAKE
             )
         else:
@@ -313,11 +331,11 @@ async def _moveInternal(label, targetDistance, funcNormal, funcSlow, funcYawLeft
                 degreeWheel,
                 80,
                 80,
-                acceleration=wheelAcceleration,
-                deceleration=wheelAcceleration,
+                acceleration=400,
+                deceleration=400,
                 stop = motor.BRAKE
             )
-        time.sleep_ms(10)
+        time.sleep_ms(5)
 
     # stop
     motor_pair.stop(motor_pair.PAIR_1, stop = motor.BRAKE)
@@ -570,4 +588,3 @@ Const_Steering_Adj = 11# wheel length / distance offset
 
 # main code
 runloop.run(main())
-
