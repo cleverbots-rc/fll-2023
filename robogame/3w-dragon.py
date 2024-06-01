@@ -13,10 +13,9 @@ async def main():
     motor_pair.pair(motor_pair.PAIR_1, port.A, port.B)
     motion_sensor.set_yaw_face(motion_sensor.BACK)
 
-    await move(25)
-    await motor.run_for_degrees(port.C, -120, 600)
-    await motor.run_for_degrees(port.C, 120, 600)
-    await move(-25)
+    await move(16, Speed.Fast)
+    await motor.run_for_degrees(port.C, 150, 400)
+    runloop.run(motor.run_for_degrees(port.C, -120, 800), move(-22, Speed.Fast))
 
     sys.exit(0)
 
