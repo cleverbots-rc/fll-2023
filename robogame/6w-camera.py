@@ -13,8 +13,8 @@ async def main():
     motor_pair.pair(motor_pair.PAIR_1, port.A, port.B)
     motion_sensor.set_yaw_face(motion_sensor.BACK)
 
-    await move(40, Speed.Fast)
-    await move(-40, Speed.Fast)
+    await move(50, Speed.Fast)
+    await move(-45, Speed.Fast)
 
     exit(0)
 
@@ -542,4 +542,3 @@ Const_Steering_Adj = 11# wheel length / distance offset
 
 # main code
 runloop.run(main())
-
